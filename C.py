@@ -8,37 +8,20 @@ from scipy.ndimage import filters
 import urllib
 from numpy import random
 import matplotlib.pyplot as plt
-from scipy.ndimage.filters import gaussian_filter
+from caffe_classes import class_names
 
 import tensorflow as tf
 
-from caffe_classes import class_names
-
 train_x = zeros((1, 227, 227, 3)).astype(float32)
 train_y = zeros((1, 1000))
-xdim = train_x.shape[1:]
-ydim = train_y.shape[1]
+
 ################################################################################
 # Read Image, and change to BGR
 
-im = np.random.rand(227, 227, 3) * 255 - 128
+im = (imread("laska.png")[:, :, :3]).astype(float32)
+im = im - 128
 
 ################################################################################
-
-# (self.feed('data')
-#         .conv(11, 11, 96, 4, 4, padding='VALID', name='conv1')
-#         .lrn(2, 2e-05, 0.75, name='norm1')
-#         .max_pool(3, 3, 2, 2, padding='VALID', name='pool1')
-#         .conv(5, 5, 256, 1, 1, group=2, name='conv2')
-#         .lrn(2, 2e-05, 0.75, name='norm2')
-#         .max_pool(3, 3, 2, 2, padding='VALID', name='pool2')
-#         .conv(3, 3, 384, 1, 1, name='conv3')
-#         .conv(3, 3, 384, 1, 1, group=2, name='conv4')
-#         .conv(3, 3, 256, 1, 1, group=2, name='conv5')
-#         .fc(4096, name='fc6')
-#         .fc(4096, name='fc7')
-#         .fc(1000, relu=False, name='fc8')
-#         .softmax(name='prob'))
 
 # In Python 3.5, change this to:
 net_data = load(open("bvlc_alexnet.npy", "rb"), encoding="latin1").item()
@@ -64,8 +47,8 @@ def conv(input, kernel, biases, k_h, k_w, c_o, s_h, s_w, padding="VALID", group=
     return tf.reshape(tf.nn.bias_add(conv, biases), [-1] + conv.get_shape().as_list()[1:])
 
 
-x = tf.placeholder(tf.float32, (None,) + xdim)
-y = tf.placeholder(tf.float32, (None,))
+x = tf.placeholder(tf.float32, (None, 227, 227, 3))
+y = tf.placeholder(tf.float32, (None, 1000))
 
 # conv1
 # conv(11, 11, 96, 4, 4, padding='VALID', name='conv1')
@@ -149,28 +132,31 @@ fc8b = tf.Variable(net_data["fc8"][1])
 fc8 = tf.nn.xw_plus_b(fc7, fc8W, fc8b)
 
 # prob
-# softmax(name='prob'))
 prob = tf.nn.softmax(fc8)
 
-loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=y, logits=fc8[0])
+loss = fc8 * y
+
 grad = tf.gradients(loss, [x])[0]
 
 init = tf.initialize_all_variables()
 sess = tf.Session()
 sess.run(init)
 
+label = 100
 gt = np.zeros([1000])
-gt[0] = 1.
+gt[label] = 1.
 
-for i in range(10000):
-    gradients, output, losses = sess.run([grad, prob, loss], feed_dict={x: [im], y: gt})
-    im = np.clip(0.9999 * (im - 10000 * gradients[0]), -128, 127)
-    if i % 4 == 0:
-        for channel in range(3):
-            cimg = gaussian_filter(im[0, channel], 1)
-            im[0, channel] = cimg
-    if i % 100 == 0:
-        print(losses, output[0][0])
+max_prob = 0
 
-plt.imshow((im + 128)/255.)
+while max_prob < 0.98:
+    gradients, output, probability = sess.run([grad, fc8, prob], feed_dict={x: [im], y: [gt]})
+
+    max_prob = probability[0][label]
+    im = im + 1000 * gradients[0]
+
+    im = np.clip(im, -128, 127)
+
+inds = argsort(output)[0]
+print(class_names[inds[-1]], probability[0, inds[-1]])
+plt.imshow((im + 128) / 255.)
 plt.show()
